@@ -2,6 +2,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+from homeassistant.components import network
 from .const import DOMAIN, CONF_REGISTERS, CONF_EMULATOR_IP, CONF_SERIAL
 
 class VirtualMeterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -11,10 +12,25 @@ class VirtualMeterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             return self.async_create_entry(title=f"Virtual Meter ({user_input[CONF_SERIAL]})", data=user_input)
 
+        adapters = await network.async_get_adapters(self.hass)
+        ip_options = []
+        for adapter in adapters:
+            if adapter.get("enabled", True):
+                for ip_info in adapter.get("ipv4", []):
+                    ip_options.append({
+                        "label": f"{ip_info['address']} ({adapter['name']})", 
+                        "value": ip_info['address']
+                    })
+        
+        if not ip_options:
+            ip_options = [{"label": "0.0.0.0 (Fallback)", "value": "0.0.0.0"}]
+
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
-                vol.Required(CONF_EMULATOR_IP): str,
+                vol.Required(CONF_EMULATOR_IP, default=ip_options[0]["value"]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=ip_options)
+                ),
                 vol.Required(CONF_SERIAL, default="HV0000000001"): str,
             })
         )
