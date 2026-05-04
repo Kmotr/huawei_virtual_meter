@@ -24,7 +24,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "modbus_values": {},
         "listeners": [],
         "server": None,
-        "udp": None
+        "udp": None,
+        "queried_registers": set()
     }
     hass.data[DOMAIN][entry.entry_id] = entry_data
 
@@ -115,6 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     
                     payload = b""
                     for i in range(start, start + count):
+                        entry_data["queried_registers"].add(i)
                         val = entry_data["modbus_values"].get(i, 0)
                         payload += struct.pack(">H", val & 0xFFFF)
                     

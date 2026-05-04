@@ -60,10 +60,26 @@ class VirtualMeterOptionsFlowHandler(config_entries.OptionsFlow):
             }
             return self.async_create_entry(title="", data={CONF_REGISTERS: regs})
 
+        queried = set()
+        if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
+            entry_data = self.hass.data[DOMAIN][self.config_entry.entry_id]
+            queried = entry_data.get("queried_registers", set())
+            
+        configured = set(self.config_entry.options.get(CONF_REGISTERS, {}).keys())
+        available = sorted([str(r) for r in queried if str(r) not in configured], key=lambda x: int(x))
+        
+        options = [{"label": f"Register {r} (abgefragt)", "value": str(r)} for r in available]
+
+        # Wenn keine Optionen da sind, fügen wir einen Platzhalter hinzu, damit das Dropdown nicht leer aussieht
+        if not options:
+            options = [{"label": "Eigene Adresse eingeben...", "value": ""}]
+
         return self.async_show_form(
             step_id="add_register",
             data_schema=vol.Schema({
-                vol.Required("address"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+                vol.Required("address"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=options, custom_value=True)
+                ),
                 vol.Required("entity_id"): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "number", "input_number"])),
                 vol.Required("factor", default=1.0): vol.Coerce(float),
             })
