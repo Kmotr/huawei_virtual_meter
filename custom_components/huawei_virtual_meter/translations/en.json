@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Virtual Meter",
+        "description": "Please select the IP address and provide a serial number.",
+        "data": {
+          "emulator_ip": "Emulator IP Address",
+          "serial": "Serial Number"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Virtual Meter Options",
+        "description": "What would you like to do?",
+        "menu_options": {
+          "add_register": "Add a new register mapping",
+          "manage_registers": "Manage/Delete existing registers"
+        }
+      },
+      "add_register": {
+        "title": "Add Register",
+        "data": {
+          "address": "Modbus Register Address",
+          "entity_id": "Home Assistant Entity",
+          "factor": "Scaling Factor (Multiplier)"
+        }
+      },
+      "manage_registers": {
+        "title": "Manage Registers",
+        "data": {
+          "to_delete": "Select registers to delete"
+        }
+      }
+    }
+  }
+}
