@@ -12,6 +12,9 @@
     }
   },
   "options": {
+    "error": {
+      "invalid_address": "Ungültige Adresse! Bitte eine gültige, positive Zahl eingeben."
+    },
     "step": {
       "init": {
         "title": "Virtual Meter Optionen",

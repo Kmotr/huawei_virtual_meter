@@ -51,14 +51,22 @@ class VirtualMeterOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_add_register(self, user_input=None):
         """Ein neues Register-Mapping hinzufügen."""
+        errors = {}
         if user_input is not None:
-            regs = dict(self.config_entry.options.get(CONF_REGISTERS, {}))
-            reg_addr = str(user_input["address"])
-            regs[reg_addr] = {
-                "entity_id": user_input["entity_id"],
-                "factor": user_input["factor"]
-            }
-            return self.async_create_entry(title="", data={CONF_REGISTERS: regs})
+            try:
+                addr_int = int(user_input["address"])
+                if addr_int < 0:
+                    raise ValueError
+                
+                regs = dict(self.config_entry.options.get(CONF_REGISTERS, {}))
+                reg_addr = str(addr_int)
+                regs[reg_addr] = {
+                    "entity_id": user_input["entity_id"],
+                    "factor": user_input["factor"]
+                }
+                return self.async_create_entry(title="", data={CONF_REGISTERS: regs})
+            except ValueError:
+                errors["address"] = "invalid_address"
 
         queried = set()
         if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
@@ -82,7 +90,8 @@ class VirtualMeterOptionsFlowHandler(config_entries.OptionsFlow):
                 ),
                 vol.Required("entity_id"): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "number", "input_number"])),
                 vol.Required("factor", default=1.0): vol.Coerce(float),
-            })
+            }),
+            errors=errors
         )
 
     async def async_step_manage_registers(self, user_input=None):
