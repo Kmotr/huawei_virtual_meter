@@ -15,12 +15,12 @@ class VirtualMeterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         adapters = await network.async_get_adapters(self.hass)
         ip_options = []
         for adapter in adapters:
-            if adapter.get("enabled", True):
-                for ip_info in adapter.get("ipv4", []):
-                    ip_options.append({
-                        "label": f"{ip_info['address']} ({adapter['name']})", 
-                        "value": ip_info['address']
-                    })
+            # Zeige IPs von ALLEN Adaptern, auch wenn sie in HA als "nicht aktiviert" gelten
+            for ip_info in adapter.get("ipv4", []):
+                ip_options.append({
+                    "label": f"{ip_info['address']} ({adapter.get('name', 'Unknown')})", 
+                    "value": ip_info['address']
+                })
         
         if not ip_options:
             ip_options = [{"label": "0.0.0.0 (Fallback)", "value": "0.0.0.0"}]
