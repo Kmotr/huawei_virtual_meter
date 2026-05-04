@@ -65,7 +65,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     continue
 
     update_register_map()
-    entry.async_on_unload(entry.add_to_hass(hass, update_register_map))
+    
+    # Listener, der aufgerufen wird, wenn die Optionen im UI geändert werden
+    async def update_listener(hass: HomeAssistant, entry: ConfigEntry):
+        update_register_map()
+
+    # Korrekter API-Aufruf, um den Listener hinzuzufügen und beim Entladen zu entfernen
+    entry.async_on_unload(entry.add_update_listener(update_listener))
 
     loop = asyncio.get_running_loop()
     
