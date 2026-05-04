@@ -15,7 +15,7 @@ class VirtualMeterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required(CONF_EMULATOR_IP): str,
-                vol.Required(CONF_SERIAL, default="HV2340181405"): str,
+                vol.Required(CONF_SERIAL, default="HV0000000001"): str,
             })
         )
 
