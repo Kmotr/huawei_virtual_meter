@@ -1,0 +1,7 @@
+{
+  "name": "Huawei Virtual Meter Emulator",
+  "render_readme": true,
+  "iot_class": "Local Push",
+  "domain": "huawei_virtual_meter",
+  "homeassistant": "2023.8.0"
+}
