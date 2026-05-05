@@ -21,7 +21,7 @@
         "description": "What would you like to do?",
         "menu_options": {
           "add_register": "Add a new register mapping",
-          "manage_registers": "Manage/Delete existing registers"
+          "edit_registers": "Edit configured registers"
         }
       },
       "add_register": {
@@ -32,11 +32,9 @@
           "factor": "Scaling Factor (Multiplier)"
         }
       },
-      "manage_registers": {
-        "title": "Manage Registers",
-        "data": {
-          "to_delete": "Select registers to delete"
-        }
+      "edit_registers": {
+        "title": "Edit Registers",
+        "description": "Here you can see all configured registers as a list. To delete a register, simply clear both the entity and fixed value fields."
       }
     }
   }

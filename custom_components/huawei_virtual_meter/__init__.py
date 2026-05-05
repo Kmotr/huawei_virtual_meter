@@ -70,12 +70,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             try:
                 val = float(new_state.state)
                 for addr_str, conf in registers_config.items():
-                    if conf["entity_id"] == entity_id:
-                        _set_modbus_value(int(addr_str), val * conf["factor"])
+                    if conf.get("entity_id") == entity_id:
+                        _set_modbus_value(int(addr_str), val * conf.get("factor", 1.0))
             except (ValueError, TypeError):
                 pass
 
-        entities_to_track = set(conf["entity_id"] for conf in registers_config.values())
+        entities_to_track = set()
+        for addr_str, conf in registers_config.items():
+            if "entity_id" in conf:
+                entities_to_track.add(conf["entity_id"])
+            elif "fixed_value" in conf:
+                _set_modbus_value(int(addr_str), conf["fixed_value"] * conf.get("factor", 1.0))
         for eid in entities_to_track:
             unsub = async_track_state_change_event(hass, eid, _state_changed_event)
             entry_data["listeners"].append(unsub)
@@ -85,8 +90,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 try:
                     val = float(state.state)
                     for addr_str, conf in registers_config.items():
-                        if conf["entity_id"] == eid:
-                            _set_modbus_value(int(addr_str), val * conf["factor"])
+                        if conf.get("entity_id") == eid:
+                            _set_modbus_value(int(addr_str), val * conf.get("factor", 1.0))
                 except (ValueError, TypeError):
                     continue
 

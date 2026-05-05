@@ -21,7 +21,7 @@
         "description": "Was möchtest du tun?",
         "menu_options": {
           "add_register": "Neues Register-Mapping hinzufügen",
-          "manage_registers": "Bestehende Register verwalten / löschen"
+          "edit_registers": "Konfigurierte Register bearbeiten"
         }
       },
       "add_register": {
@@ -32,11 +32,9 @@
           "factor": "Skalierungsfaktor (Multiplikator)"
         }
       },
-      "manage_registers": {
-        "title": "Register verwalten",
-        "data": {
-          "to_delete": "Zu löschende Register auswählen"
-        }
+      "edit_registers": {
+        "title": "Register bearbeiten",
+        "description": "Hier siehst du alle konfigurierten Register als Liste. Um ein Register zu löschen, leere einfach das Entitäts- und Festwert-Feld."
       }
     }
   }
