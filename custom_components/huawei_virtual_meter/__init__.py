@@ -25,6 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "listeners": [],
         "server": None,
         "udp": None,
+        "udp_protocol": None,
         "queried_registers": set()
     }
     hass.data[DOMAIN][entry.entry_id] = entry_data
@@ -101,8 +102,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     loop = asyncio.get_running_loop()
     
     class VirtualMeterUDP(asyncio.DatagramProtocol):
+        def __init__(self):
+            self.closed = asyncio.Event()
+
         def connection_made(self, transport):
             self.transport = transport
+
+        def connection_lost(self, exc):
+            self.closed.set()
 
         def datagram_received(self, data, addr):
             if data.startswith(MAGIC + APP_MAGIC):
@@ -116,13 +123,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 except Exception as err:
                     _LOGGER.error("Fehler beim Senden der UDP-Antwort: %s", err)
 
+    udp_protocol = VirtualMeterUDP()
     try:
         transport, _ = await loop.create_datagram_endpoint(
-            VirtualMeterUDP, 
+            lambda: udp_protocol, 
             local_addr=("0.0.0.0", 6600), 
             allow_broadcast=True
         )
         entry_data["udp"] = transport
+        entry_data["udp_protocol"] = udp_protocol
     except OSError as err:
         if err.errno == errno.EADDRINUSE:
             raise ConfigEntryNotReady("UDP Port 6600 wird bereits verwendet") from err
@@ -171,6 +180,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await entry_data["server"].wait_closed()
         if entry_data["udp"]:
             entry_data["udp"].close()
+            if entry_data["udp_protocol"]:
+                await entry_data["udp_protocol"].closed.wait()
 
     stop_listener = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_server)
     entry.async_on_unload(stop_listener)
@@ -187,6 +198,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await entry_data["server"].wait_closed()
     if entry_data["udp"]:
         entry_data["udp"].close()
+        if entry_data["udp_protocol"]:
+            await entry_data["udp_protocol"].closed.wait()
     for unsub in entry_data["listeners"]:
         unsub()
 
