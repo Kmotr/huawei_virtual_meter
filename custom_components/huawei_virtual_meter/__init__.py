@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.event import async_track_state_change_event
-from .const import DOMAIN, CONF_REGISTERS, CONF_EMULATOR_IP, CONF_SERIAL
+from .const import DOMAIN, CONF_REGISTERS, CONF_EMULATOR_IP, CONF_SERIAL, METER_REGISTERS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +36,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         registers_config = entry.options.get(CONF_REGISTERS, {})
 
+        def _set_modbus_value(addr, raw_val):
+            reg_def = METER_REGISTERS.get(addr)
+            if reg_def:
+                if reg_def["width"] == 2:
+                    if reg_def["type"] == "INT32":
+                        raw_val = max(min(int(raw_val), 2147483647), -2147483648)
+                        packed = struct.pack(">i", raw_val)
+                    else:
+                        raw_val = max(min(int(raw_val), 4294967295), 0)
+                        packed = struct.pack(">I", raw_val)
+                    high, low = struct.unpack(">HH", packed)
+                    entry_data["modbus_values"][addr] = high
+                    entry_data["modbus_values"][addr + 1] = low
+                else:
+                    if reg_def["type"] == "INT16":
+                        raw_val = max(min(int(raw_val), 32767), -32768)
+                        packed = struct.pack(">h", raw_val)
+                    else:
+                        raw_val = max(min(int(raw_val), 65535), 0)
+                        packed = struct.pack(">H", raw_val)
+                    entry_data["modbus_values"][addr] = struct.unpack(">H", packed)[0]
+            else:
+                entry_data["modbus_values"][addr] = int(raw_val) & 0xFFFF
+
         @callback
         def _state_changed_event(event):
             entity_id = event.data["entity_id"]
@@ -46,7 +70,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 val = float(new_state.state)
                 for addr_str, conf in registers_config.items():
                     if conf["entity_id"] == entity_id:
-                        entry_data["modbus_values"][int(addr_str)] = int(val * conf["factor"])
+                        _set_modbus_value(int(addr_str), val * conf["factor"])
             except (ValueError, TypeError):
                 pass
 
@@ -61,7 +85,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     val = float(state.state)
                     for addr_str, conf in registers_config.items():
                         if conf["entity_id"] == eid:
-                            entry_data["modbus_values"][int(addr_str)] = int(val * conf["factor"])
+                            _set_modbus_value(int(addr_str), val * conf["factor"])
                 except (ValueError, TypeError):
                     continue
 

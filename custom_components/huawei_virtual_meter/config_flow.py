@@ -3,7 +3,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.components import network
-from .const import DOMAIN, CONF_REGISTERS, CONF_EMULATOR_IP, CONF_SERIAL
+from .const import DOMAIN, CONF_REGISTERS, CONF_EMULATOR_IP, CONF_SERIAL, METER_REGISTERS
 
 class VirtualMeterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -74,9 +74,28 @@ class VirtualMeterOptionsFlowHandler(config_entries.OptionsFlow):
             queried = entry_data.get("queried_registers", set())
             
         configured = set(self.config_entry.options.get(CONF_REGISTERS, {}).keys())
-        available = sorted([str(r) for r in queried if str(r) not in configured], key=lambda x: int(x))
         
-        options = [{"label": f"Register {r} (abgefragt)", "value": str(r)} for r in available]
+        available = []
+        for r in sorted([int(x) for x in queried]):
+            if str(r) in configured:
+                continue
+            
+            # Verstecke Register, die die untere Hälfte eines 32-Bit Registers sind
+            prev_reg = METER_REGISTERS.get(r - 1)
+            if prev_reg and prev_reg.get("width", 1) == 2:
+                continue
+                
+            available.append(str(r))
+            
+        options = []
+        for r_str in available:
+            r = int(r_str)
+            reg_def = METER_REGISTERS.get(r)
+            if reg_def:
+                label = f"Register {r}: {reg_def['name']} ({reg_def['type']})"
+            else:
+                label = f"Register {r} (abgefragt)"
+            options.append({"label": label, "value": r_str})
 
         # Wenn keine Optionen da sind, fügen wir einen Platzhalter hinzu, damit das Dropdown nicht leer aussieht
         if not options:
@@ -101,7 +120,14 @@ class VirtualMeterOptionsFlowHandler(config_entries.OptionsFlow):
             new_regs = {k: v for k, v in current_regs.items() if k not in user_input["to_delete"]}
             return self.async_create_entry(title="", data={CONF_REGISTERS: new_regs})
 
-        options = {k: f"Reg {k} -> {v['entity_id']}" for k, v in current_regs.items()}
+        options = {}
+        for k, v in current_regs.items():
+            r = int(k)
+            reg_def = METER_REGISTERS.get(r)
+            if reg_def:
+                options[k] = f"Reg {k} ({reg_def['name']}) -> {v['entity_id']}"
+            else:
+                options[k] = f"Reg {k} -> {v['entity_id']}"
         return self.async_show_form(
             step_id="manage_registers",
             data_schema=vol.Schema({
