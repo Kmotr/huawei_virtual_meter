@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update version in manifest.json
+        run: |
+          # Get the tag name and remove 'v' prefix if it exists
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          
+          # Replace the version in manifest.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" custom_components/huawei_virtual_meter/manifest.json
+
+      - name: Create ZIP archive
+        run: |
+          cd custom_components
+          zip -r ../huawei_virtual_meter.zip huawei_virtual_meter
+
+      - name: Upload ZIP to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: huawei_virtual_meter.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
