@@ -1,7 +1,5 @@
 DOMAIN = "huawei_virtual_meter"
 CONF_REGISTERS = "registers"
-DOMAIN = "huawei_virtual_meter"
-CONF_REGISTERS = "registers"
 CONF_EMULATOR_IP = "emulator_ip"
 CONF_SERIAL = "serial"
 DEFAULT_PORT = 502
