@@ -1,9 +1,12 @@
+import logging
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.components import network
-from .const import DOMAIN, CONF_REGISTERS, CONF_EMULATOR_IP, CONF_SERIAL, METER_REGISTERS
+from .const import DOMAIN, CONF_REGISTERS, CONF_EMULATOR_IP, CONF_SERIAL, CONF_UDP_PORT, DEFAULT_UDP_PORT, CONF_UNIT_ID, DEFAULT_UNIT_ID, METER_REGISTERS
+
+_LOGGER = logging.getLogger(__name__)
 
 class VirtualMeterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -32,6 +35,8 @@ class VirtualMeterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     selector.SelectSelectorConfig(options=ip_options)
                 ),
                 vol.Required(CONF_SERIAL, default="HV0000000001"): str,
+                vol.Required(CONF_UDP_PORT, default=DEFAULT_UDP_PORT): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+                vol.Required(CONF_UNIT_ID, default=DEFAULT_UNIT_ID): vol.Coerce(int),
             })
         )
 
@@ -42,11 +47,54 @@ class VirtualMeterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class VirtualMeterOptionsFlowHandler(config_entries.OptionsFlow):
 
+    async def _delayed_reload(self, old_port, new_port):
+        """Reload the integration after a short delay to let options save first."""
+        import asyncio
+        await asyncio.sleep(2)
+        await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+
     async def async_step_init(self, user_input=None):
         """Hauptmenü der Optionen."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_register", "edit_registers"]
+            menu_options=["add_register", "edit_registers", "edit_settings"]
+        )
+
+    async def async_step_edit_settings(self, user_input=None):
+        """UDP Discovery Port, Unit ID und andere Einstellungen bearbeiten."""
+        if user_input is not None:
+            old_port = self.config_entry.data.get(CONF_UDP_PORT, DEFAULT_UDP_PORT)
+            new_port = user_input[CONF_UDP_PORT]
+            new_data = dict(self.config_entry.data)
+            new_data[CONF_UDP_PORT] = new_port
+            new_data[CONF_UNIT_ID] = user_input[CONF_UNIT_ID]
+            
+            # Update entry data (port/unit_id) — options (registers) are NOT touched
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data=new_data
+            )
+            
+            if old_port != new_port:
+                _LOGGER.info("UDP port changed from %d to %d, scheduling integration reload", old_port, new_port)
+                self.hass.async_create_task(
+                    self._delayed_reload(old_port, new_port)
+                )
+            
+            # Abort the options flow instead of creating an entry.
+            # async_create_entry(data=X) REPLACES options with X.
+            # async_abort() ends the flow WITHOUT touching options at all.
+            return self.async_abort(reason="settings_saved")
+        
+        current_udp_port = self.config_entry.data.get(CONF_UDP_PORT, DEFAULT_UDP_PORT)
+        current_unit_id = self.config_entry.data.get(CONF_UNIT_ID, DEFAULT_UNIT_ID)
+        
+        return self.async_show_form(
+            step_id="edit_settings",
+            data_schema=vol.Schema({
+                vol.Required(CONF_UDP_PORT, default=current_udp_port): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+                vol.Required(CONF_UNIT_ID, default=current_unit_id): vol.Coerce(int),
+            })
         )
 
     async def async_step_add_register(self, user_input=None):
@@ -165,9 +213,9 @@ class VirtualMeterOptionsFlowHandler(config_entries.OptionsFlow):
             
             schema[vol.Required(f"factor_{r_str}", default=conf.get("factor", 1.0))] = vol.Coerce(float)
 
-        # Wenn keine konfiguriert sind, zurück zum Menü
+        # Wenn keine konfiguriert sind, abbrechen mit Hinweis
         if not schema:
-            return await self.async_step_init()
+            return self.async_abort(reason="no_registers")
 
         return self.async_show_form(
             step_id="edit_registers",

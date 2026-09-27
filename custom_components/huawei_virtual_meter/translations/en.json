@@ -3,10 +3,12 @@
     "step": {
       "user": {
         "title": "Set up Virtual Meter",
-        "description": "Please select the IP address and provide a serial number.",
+        "description": "Select the IP address and provide a serial number.\n\nUDP Discovery Port: Use 6600 for older firmware (pre-SPC231). Use 10086 for SCharger firmware V100R023C10SPC231 and later.\n\nUnit ID: Huawei default is 11 (0x0B). Use 1 for standard Modbus.",
         "data": {
           "emulator_ip": "Emulator IP Address",
-          "serial": "Serial Number"
+          "serial": "Serial Number",
+          "udp_port": "UDP Discovery Port (6600 = pre-SPC231, 10086 = SPC231+)",
+          "unit_id": "Modbus Unit ID (11 = Huawei default, 1 = standard)"
         }
       }
     }
@@ -15,13 +17,18 @@
     "error": {
       "invalid_address": "Invalid address! Please enter a valid positive number."
     },
+    "abort": {
+      "no_registers": "No registers configured yet. Use 'Add a new register mapping' first.",
+      "settings_saved": "Settings saved. The integration will reload to apply the new UDP port."
+    },
     "step": {
       "init": {
         "title": "Virtual Meter Options",
         "description": "What would you like to do?",
         "menu_options": {
           "add_register": "Add a new register mapping",
-          "edit_registers": "Edit configured registers"
+          "edit_registers": "Edit configured registers",
+          "edit_settings": "Edit settings (UDP port, Unit ID)"
         }
       },
       "add_register": {
@@ -35,6 +42,14 @@
       "edit_registers": {
         "title": "Edit Registers",
         "description": "Here you can see all configured registers as a list. To delete a register, simply clear both the entity and fixed value fields."
+      },
+      "edit_settings": {
+        "title": "Settings",
+        "description": "Configure the UDP discovery port and Modbus unit ID.\n\nUDP port: 6600 for older firmware (pre-SPC231), 10086 for SPC231+. Changing the port reloads the integration.\n\nUnit ID: 11 = Huawei default (0x0B), 1 = standard Modbus. Changes apply instantly — no reload needed.",
+        "data": {
+          "udp_port": "UDP Discovery Port",
+          "unit_id": "Modbus Unit ID (11 = Huawei, 1 = standard)"
+        }
       }
     }
   }

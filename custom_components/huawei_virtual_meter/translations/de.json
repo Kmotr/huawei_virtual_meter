@@ -3,10 +3,12 @@
     "step": {
       "user": {
         "title": "Virtual Meter einrichten",
-        "description": "Bitte wähle die IP-Adresse und gib eine Seriennummer ein.",
+        "description": "Bitte wähle die IP-Adresse und gib eine Seriennummer ein.\n\nUDP Discovery Port: 6600 für ältere Firmware (vor SPC231). 10086 für SCharger Firmware V100R023C10SPC231 und neuer.\n\nUnit ID: Huawei-Standard ist 11 (0x0B). 1 für Standard-Modbus.",
         "data": {
           "emulator_ip": "Emulator IP-Adresse",
-          "serial": "Seriennummer"
+          "serial": "Seriennummer",
+          "udp_port": "UDP Discovery Port (6600 = vor SPC231, 10086 = SPC231+)",
+          "unit_id": "Modbus Unit ID (11 = Huawei-Standard, 1 = Standard)"
         }
       }
     }
@@ -15,13 +17,18 @@
     "error": {
       "invalid_address": "Ungültige Adresse! Bitte eine gültige, positive Zahl eingeben."
     },
+    "abort": {
+      "no_registers": "Es sind noch keine Register konfiguriert. Verwenden Sie zunächst 'Neues Register-Mapping hinzufügen'.",
+      "settings_saved": "Einstellungen gespeichert. Die Integration wird neu geladen, um den neuen UDP-Port anzuwenden."
+    },
     "step": {
       "init": {
         "title": "Virtual Meter Optionen",
         "description": "Was möchtest du tun?",
         "menu_options": {
           "add_register": "Neues Register-Mapping hinzufügen",
-          "edit_registers": "Konfigurierte Register bearbeiten"
+          "edit_registers": "Konfigurierte Register bearbeiten",
+          "edit_settings": "Einstellungen bearbeiten (UDP-Port, Unit ID)"
         }
       },
       "add_register": {
@@ -35,6 +42,14 @@
       "edit_registers": {
         "title": "Register bearbeiten",
         "description": "Hier siehst du alle konfigurierten Register als Liste. Um ein Register zu löschen, leere einfach das Entitäts- und Festwert-Feld."
+      },
+      "edit_settings": {
+        "title": "Einstellungen",
+        "description": "Konfiguriere den UDP Discovery Port und die Modbus Unit ID.\n\nUDP-Port: 6600 für ältere Firmware (vor SPC231), 10086 für SPC231+. Port-Änderung lädt die Integration neu.\n\nUnit ID: 11 = Huawei-Standard (0x0B), 1 = Standard-Modbus. Änderung wird sofort wirksam — kein Neuladen nötig.",
+        "data": {
+          "udp_port": "UDP Discovery Port",
+          "unit_id": "Modbus Unit ID (11 = Huawei, 1 = Standard)"
+        }
       }
     }
   }
