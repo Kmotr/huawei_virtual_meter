@@ -3,23 +3,32 @@
     "step": {
       "user": {
         "title": "Virtual Meter einrichten",
-        "description": "Bitte wähle die IP-Adresse und gib eine Seriennummer ein.\n\nUDP Discovery Port: 6600 für ältere Firmware (vor SPC231). 10086 für SCharger Firmware V100R023C10SPC231 und neuer.\n\nUnit ID: Huawei-Standard ist 11 (0x0B). 1 für Standard-Modbus.",
+        "description": "Wähle die erreichbare IPv4-Adresse von Home Assistant und eine Seriennummer (1–20 druckbare ASCII-Zeichen).\n\nDiscovery verwendet standardmäßig UDP 6600. Port 10086 steht für experimentelle SPC231-Tests zur Verfügung; Authentifizierung und vollständige Firmware-Kompatibilität sind nicht nachgewiesen.\n\nUnit-ID: 11 bei neuer Einrichtung; 0 akzeptiert alle eingehenden IDs (bisheriges Verhalten).",
         "data": {
           "emulator_ip": "Emulator IP-Adresse",
           "serial": "Seriennummer",
-          "udp_port": "UDP Discovery Port (6600 = vor SPC231, 10086 = SPC231+)",
-          "unit_id": "Modbus Unit ID (11 = Huawei-Standard, 1 = Standard)"
+          "udp_port": "UDP Discovery Port",
+          "unit_id": "Modbus Unit-ID (0 = alle, 11 = Standard bei neuer Einrichtung)"
         }
       }
+    },
+    "error": {
+      "invalid_port": "Gib einen ganzzahligen Port von 1 bis 65535 ein.",
+      "invalid_unit_id": "Gib eine ganzzahlige Unit-ID von 0 bis 255 ein (0 akzeptiert alle IDs).",
+      "invalid_serial": "Verwende 1–20 druckbare ASCII-Zeichen."
     }
   },
   "options": {
     "error": {
-      "invalid_address": "Ungültige Adresse! Bitte eine gültige, positive Zahl eingeben."
+      "invalid_address": "Gib eine Registeradresse von 0 bis 65535 ein.",
+      "invalid_port": "Gib einen ganzzahligen Port von 1 bis 65535 ein.",
+      "invalid_unit_id": "Gib eine ganzzahlige Unit-ID von 0 bis 255 ein (0 akzeptiert alle IDs).",
+      "invalid_serial": "Verwende 1–20 druckbare ASCII-Zeichen."
     },
     "abort": {
       "no_registers": "Es sind noch keine Register konfiguriert. Verwenden Sie zunächst 'Neues Register-Mapping hinzufügen'.",
-      "settings_saved": "Einstellungen gespeichert. Die Integration wird neu geladen, um den neuen UDP-Port anzuwenden."
+      "settings_saved": "Einstellungen gespeichert. Portänderungen laden die Integration automatisch neu; Änderungen der Unit-ID gelten sofort.",
+      "invalid_address": "Gib eine Registeradresse von 0 bis 65535 ein."
     },
     "step": {
       "init": {
@@ -45,10 +54,10 @@
       },
       "edit_settings": {
         "title": "Einstellungen",
-        "description": "Konfiguriere den UDP Discovery Port und die Modbus Unit ID.\n\nUDP-Port: 6600 für ältere Firmware (vor SPC231), 10086 für SPC231+. Port-Änderung lädt die Integration neu.\n\nUnit ID: 11 = Huawei-Standard (0x0B), 1 = Standard-Modbus. Änderung wird sofort wirksam — kein Neuladen nötig.",
+        "description": "Eine Änderung des Discovery-Ports lädt die Integration neu und erhält die Registerzuordnung. UDP 10086 ist für SPC231 experimentell; TLS und proprietäre Authentifizierung werden nicht unterstützt.\n\nUnit-ID: 0 akzeptiert alle IDs (bisheriges Verhalten), 1–255 filtert auf die gewählte ID. Änderungen der Unit-ID gelten sofort ohne Neuladen.",
         "data": {
           "udp_port": "UDP Discovery Port",
-          "unit_id": "Modbus Unit ID (11 = Huawei, 1 = Standard)"
+          "unit_id": "Modbus Unit-ID (0 = alle)"
         }
       }
     }

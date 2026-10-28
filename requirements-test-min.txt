@@ -1,0 +1,3 @@
+# Python 3.13: the supported minimum for the options-flow API.
+homeassistant==2024.12.5
+pytest-homeassistant-custom-component==0.13.195
