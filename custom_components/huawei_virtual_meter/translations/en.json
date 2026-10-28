@@ -3,17 +3,32 @@
     "step": {
       "user": {
         "title": "Set up Virtual Meter",
-        "description": "Please select the IP address and provide a serial number.",
+        "description": "Select the reachable Home Assistant IPv4 address and a serial number (1–20 printable ASCII characters).\n\nDiscovery defaults to UDP 6600. Port 10086 is available for experimental SPC231 testing; authentication and complete firmware compatibility are unverified.\n\nUnit ID: 11 for new setups; 0 accepts any incoming ID (legacy mode).",
         "data": {
           "emulator_ip": "Emulator IP Address",
-          "serial": "Serial Number"
+          "serial": "Serial Number",
+          "udp_port": "UDP discovery port",
+          "unit_id": "Modbus unit ID (0 = any, 11 = default for new setups)"
         }
       }
+    },
+    "error": {
+      "invalid_port": "Enter an integer port from 1 to 65535.",
+      "invalid_unit_id": "Enter an integer unit ID from 0 to 255 (0 accepts any ID).",
+      "invalid_serial": "Use 1–20 printable ASCII characters."
     }
   },
   "options": {
     "error": {
-      "invalid_address": "Invalid address! Please enter a valid positive number."
+      "invalid_address": "Enter a register address from 0 to 65535.",
+      "invalid_port": "Enter an integer port from 1 to 65535.",
+      "invalid_unit_id": "Enter an integer unit ID from 0 to 255 (0 accepts any ID).",
+      "invalid_serial": "Use 1–20 printable ASCII characters."
+    },
+    "abort": {
+      "no_registers": "No registers configured yet. Use 'Add a new register mapping' first.",
+      "settings_saved": "Settings saved. Port changes automatically reload the integration; unit ID changes apply immediately.",
+      "invalid_address": "Enter a register address from 0 to 65535."
     },
     "step": {
       "init": {
@@ -21,7 +36,8 @@
         "description": "What would you like to do?",
         "menu_options": {
           "add_register": "Add a new register mapping",
-          "edit_registers": "Edit configured registers"
+          "edit_registers": "Edit configured registers",
+          "edit_settings": "Edit settings (UDP port, Unit ID)"
         }
       },
       "add_register": {
@@ -35,6 +51,14 @@
       "edit_registers": {
         "title": "Edit Registers",
         "description": "Here you can see all configured registers as a list. To delete a register, simply clear both the entity and fixed value fields."
+      },
+      "edit_settings": {
+        "title": "Settings",
+        "description": "A discovery port change reloads the integration and keeps register mappings. UDP 10086 is experimental for SPC231; TLS/proprietary authentication is unsupported.\n\nUnit ID: 0 accepts any ID (legacy mode), 1–255 filters on the selected ID. Unit ID changes apply immediately without reloading.",
+        "data": {
+          "udp_port": "UDP Discovery Port",
+          "unit_id": "Modbus unit ID (0 = any)"
+        }
       }
     }
   }

@@ -1,33 +1,101 @@
+"""Huawei virtual meter setup, register mapping and resource lifecycle."""
+
 import asyncio
+import contextlib
+import ipaddress
 import logging
 import struct
-import ipaddress
-import errno
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.event import async_track_state_change_event
-from .const import DOMAIN, CONF_REGISTERS, CONF_EMULATOR_IP, CONF_SERIAL, METER_REGISTERS
+
+from .const import (
+    ANY_UNIT_ID,
+    CONF_EMULATOR_IP,
+    CONF_REGISTERS,
+    CONF_SERIAL,
+    CONF_UDP_PORT,
+    CONF_UNIT_ID,
+    DEFAULT_PORT,
+    DEFAULT_UDP_PORT,
+    DOMAIN,
+    METER_REGISTERS,
+)
+from .modbus import ModbusTCPServer
 
 _LOGGER = logging.getLogger(__name__)
+MAGIC = b"\x5a\x5a\x5a\x5a"
+APP_MAGIC = b"\x00\x41\x3a"
 
-MAGIC = b"\x5A\x5A\x5A\x5A"
-APP_MAGIC = b"\x00\x41\x3A"
+
+class VirtualMeterUDP(asyncio.DatagramProtocol):
+    """Respond to the existing Huawei discovery format on a configurable port."""
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        self.entry = entry
+        self.closed = asyncio.Event()
+
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def connection_lost(self, exc):
+        self.closed.set()
+
+    def datagram_received(self, data, addr):
+        if not data.startswith(MAGIC + APP_MAGIC):
+            return
+        try:
+            response = (
+                MAGIC
+                + APP_MAGIC
+                + b"\x2f\x00"
+                + self.entry.data[CONF_SERIAL].encode().ljust(20, b"\x00")
+                + b"\x00\x05\x00\x01\x02\x00\xf6\x01\x05\x01\x64\x07\x01\x00\x08\x04"
+                + ipaddress.IPv4Address(self.entry.data[CONF_EMULATOR_IP]).packed[::-1]
+                + b"\x0a\x04\x00\x00\x00\x00"
+            )
+            self.transport.sendto(response, addr)
+            _LOGGER.debug("Discovery response sent to %s", addr)
+        except (ValueError, OSError) as err:
+            _LOGGER.warning("Unable to send discovery response: %s", err)
+
+
+async def _async_close_resources(entry_data: dict) -> None:
+    """Clean up successful and partially completed setup, shutdown or unload."""
+    async with entry_data["close_lock"]:
+        entry_data["closed"] = True
+        for unsubscribe in entry_data["listeners"]:
+            unsubscribe()
+        entry_data["listeners"].clear()
+        await entry_data["server"].async_close()
+        if entry_data["udp"] is not None:
+            entry_data["udp"].close()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(entry_data["udp_protocol"].closed.wait(), 5)
+            entry_data["udp"] = None
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Setzt die Virtual Meter Integration aus einem ConfigEntry auf."""
+    """Start listeners transactionally; leave no resources behind on failure."""
     hass.data.setdefault(DOMAIN, {})
-    
     entry_data = {
         "modbus_values": {},
         "listeners": [],
-        "server": None,
         "udp": None,
-        "udp_protocol": None,
-        "queried_registers": set()
+        "udp_protocol": VirtualMeterUDP(entry),
+        "queried_registers": set(),
+        "close_lock": asyncio.Lock(),
+        "closed": False,
+        "reload_requested": False,
     }
+    entry_data["server"] = ModbusTCPServer(
+        entry_data["modbus_values"],
+        entry_data["queried_registers"],
+        lambda: entry.data.get(CONF_UNIT_ID, ANY_UNIT_ID),
+    )
     hass.data[DOMAIN][entry.entry_id] = entry_data
 
     def update_register_map():
@@ -35,6 +103,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             unsub()
         entry_data["listeners"] = []
 
+        # Rebuild in place: the server keeps a reference to this dictionary.
+        # Removed mappings must not keep serving stale values.
+        entry_data["modbus_values"].clear()
         registers_config = entry.options.get(CONF_REGISTERS, {})
 
         def _set_modbus_value(addr, raw_val):
@@ -72,7 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 for addr_str, conf in registers_config.items():
                     if conf.get("entity_id") == entity_id:
                         _set_modbus_value(int(addr_str), val * conf.get("factor", 1.0))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 pass
 
         entities_to_track = set()
@@ -80,132 +151,78 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if "entity_id" in conf:
                 entities_to_track.add(conf["entity_id"])
             elif "fixed_value" in conf:
-                _set_modbus_value(int(addr_str), conf["fixed_value"] * conf.get("factor", 1.0))
+                _set_modbus_value(
+                    int(addr_str), conf["fixed_value"] * conf.get("factor", 1.0)
+                )
         for eid in entities_to_track:
             unsub = async_track_state_change_event(hass, eid, _state_changed_event)
             entry_data["listeners"].append(unsub)
-            
+
             state = hass.states.get(eid)
             if state and state.state not in ("unknown", "unavailable"):
                 try:
                     val = float(state.state)
                     for addr_str, conf in registers_config.items():
                         if conf.get("entity_id") == eid:
-                            _set_modbus_value(int(addr_str), val * conf.get("factor", 1.0))
-                except (ValueError, TypeError):
+                            _set_modbus_value(
+                                int(addr_str), val * conf.get("factor", 1.0)
+                            )
+                except (ValueError, TypeError, OverflowError):
                     continue
 
-    update_register_map()
-    
-    # Listener, der aufgerufen wird, wenn die Optionen im UI geändert werden
+    udp_port = entry.data.get(CONF_UDP_PORT, DEFAULT_UDP_PORT)
+    try:
+        update_register_map()
+        try:
+            transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+                lambda: entry_data["udp_protocol"],
+                local_addr=("0.0.0.0", udp_port),
+                allow_broadcast=True,
+            )
+            entry_data["udp"] = transport
+        except OSError as err:
+            raise ConfigEntryNotReady(
+                f"Cannot start UDP discovery on port {udp_port}: {err}"
+            ) from err
+        try:
+            await entry_data["server"].async_start("0.0.0.0", DEFAULT_PORT)
+        except OSError as err:
+            raise ConfigEntryNotReady(
+                f"Cannot start Modbus TCP on port {DEFAULT_PORT}: {err}"
+            ) from err
+    except BaseException:
+        # HA cannot unload an entry whose setup did not complete successfully.
+        # This also handles cancellation while starting either socket.
+        await _async_close_resources(entry_data)
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        raise
+
     async def update_listener(hass: HomeAssistant, entry: ConfigEntry):
+        if entry_data["closed"] or entry_data["reload_requested"]:
+            return
+        if entry.data.get(CONF_UDP_PORT, DEFAULT_UDP_PORT) != udp_port:
+            # All data/options updates use this one path. There is no delayed
+            # flow-owned task and concurrent notifications request only one reload.
+            entry_data["reload_requested"] = True
+            await hass.config_entries.async_reload(entry.entry_id)
+            return
         update_register_map()
 
-    # Korrekter API-Aufruf, um den Listener hinzuzufügen und beim Entladen zu entfernen
+    async def async_stop_server(event):
+        await _async_close_resources(entry_data)
+
     entry.async_on_unload(entry.add_update_listener(update_listener))
-
-    loop = asyncio.get_running_loop()
-    
-    class VirtualMeterUDP(asyncio.DatagramProtocol):
-        def __init__(self):
-            self.closed = asyncio.Event()
-
-        def connection_made(self, transport):
-            self.transport = transport
-
-        def connection_lost(self, exc):
-            self.closed.set()
-
-        def datagram_received(self, data, addr):
-            if data.startswith(MAGIC + APP_MAGIC):
-                try:
-                    resp = (MAGIC + APP_MAGIC + b"\x2f\x00" + 
-                            entry.data[CONF_SERIAL].encode().ljust(20, b"\x00") + 
-                            b"\x00\x05\x00\x01\x02\x00\xf6\x01\x05\x01\x64\x07\x01\x00\x08\x04" + 
-                            ipaddress.IPv4Address(entry.data[CONF_EMULATOR_IP]).packed[::-1] + 
-                            b"\x0A\x04\x00\x00\x00\x00")
-                    self.transport.sendto(resp, addr)
-                except Exception as err:
-                    _LOGGER.error("Fehler beim Senden der UDP-Antwort: %s", err)
-
-    udp_protocol = VirtualMeterUDP()
-    try:
-        transport, _ = await loop.create_datagram_endpoint(
-            lambda: udp_protocol, 
-            local_addr=("0.0.0.0", 6600), 
-            allow_broadcast=True
-        )
-        entry_data["udp"] = transport
-        entry_data["udp_protocol"] = udp_protocol
-    except OSError as err:
-        if err.errno == errno.EADDRINUSE:
-            raise ConfigEntryNotReady("UDP Port 6600 wird bereits verwendet") from err
-        raise ConfigEntryNotReady(f"UDP Server konnte nicht gestartet werden: {err}") from err
-
-    async def handle_modbus(reader, writer):
-        while True:
-            try:
-                frame = await asyncio.wait_for(reader.read(4096), timeout=60)
-                if not frame:
-                    break
-                if len(frame) >= 12 and frame[7] in (3, 4):
-                    start = struct.unpack(">H", frame[8:10])[0]
-                    count = struct.unpack(">H", frame[10:12])[0]
-                    
-                    payload = b""
-                    for i in range(start, start + count):
-                        entry_data["queried_registers"].add(i)
-                        val = entry_data["modbus_values"].get(i, 0)
-                        payload += struct.pack(">H", val & 0xFFFF)
-                    
-                    resp = (frame[0:2] + b"\x00\x00" + 
-                            struct.pack(">H", len(payload) + 3) + 
-                            frame[6:7] + bytes([frame[7], len(payload)]) + 
-                            payload)
-                    writer.write(resp)
-                    await writer.drain()
-            except Exception:
-                break
-        writer.close()
-        await writer.wait_closed()
-
-    try:
-        server = await asyncio.start_server(handle_modbus, "0.0.0.0", 502)
-        entry_data["server"] = server
-    except OSError as err:
-        transport.close()
-        if err.errno == errno.EADDRINUSE:
-            raise ConfigEntryNotReady("Modbus Port 502 wird bereits verwendet") from err
-        raise ConfigEntryNotReady(f"Modbus Server Fehler: {err}") from err
-
-    async def _async_stop_server(event):
-        _LOGGER.info("HA stoppt. Beende Virtual Meter Server...")
-        if entry_data["server"]:
-            entry_data["server"].close()
-            await entry_data["server"].wait_closed()
-        if entry_data["udp"]:
-            entry_data["udp"].close()
-            if entry_data["udp_protocol"]:
-                await entry_data["udp_protocol"].closed.wait()
-
-    stop_listener = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_server)
-    entry.async_on_unload(stop_listener)
-
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, async_stop_server)
+    )
+    _LOGGER.debug("Meter listening on UDP %d and TCP %d", udp_port, DEFAULT_PORT)
     return True
 
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    entry_id = entry.entry_id
-    if entry_id not in hass.data[DOMAIN]: return True
-    entry_data = hass.data[DOMAIN].pop(entry_id)
-
-    if entry_data["server"]:
-        entry_data["server"].close()
-        await entry_data["server"].wait_closed()
-    if entry_data["udp"]:
-        entry_data["udp"].close()
-        if entry_data["udp_protocol"]:
-            await entry_data["udp_protocol"].closed.wait()
-    for unsub in entry_data["listeners"]:
-        unsub()
-
+    """Release sockets, accepted clients and state listeners before reloading."""
+    entries = hass.data.get(DOMAIN, {})
+    if (entry_data := entries.get(entry.entry_id)) is not None:
+        await _async_close_resources(entry_data)
+        entries.pop(entry.entry_id, None)
     return True

@@ -3,66 +3,160 @@
 ![GitHub Release](https://img.shields.io/github/v/release/kmotr/huawei_virtual_meter)
 ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)
 
-This custom integration for Home Assistant acts as a **virtual Modbus TCP server**, emulating a **Huawei Smart Power Sensor** (Smart Meter). It allows you to feed real-time power, voltage, current, and energy data from any Home Assistant entity directly into your Huawei SCharger (Smart Charger).
+This custom integration exposes Home Assistant sensor values through a plaintext
+Modbus TCP meter server and responds to Huawei UDP discovery requests. Register
+mappings, fixed values and scaling factors are configured in the Home Assistant UI.
 
-By utilizing this integration, your Huawei SCharger will automatically discover the virtual meter on your local network and use its data for dynamic power control, surplus solar charging logic (PV excess charging), and charging statistics—without requiring a physical Huawei Smart Power Sensor.
+**Requires Home Assistant 2024.12.5 or newer.** This minimum matches the Config Entry
+options-flow API used by the integration. Older entries keep their register options
+and continue accepting any unit ID until an explicit filter is configured.
 
-## Features
+## Firmware compatibility
 
-- 🔋 **Seamless Integration:** Emulates the official "3.3 Meter Equipment Register" Modbus map required by Huawei SChargers.
-- 📡 **Auto-Discovery:** Simulates the Huawei UDP discovery protocol on port 6600, allowing the SCharger to find the meter automatically.
-- ⚙️ **Direct UI Configuration:** Configure, map, and edit all your Modbus registers directly from the Home Assistant UI. No YAML required!
-- 🎛️ **Entity & Fixed Value Support:** Map live Home Assistant entities (e.g., `sensor.grid_power`) or set fixed values (e.g., a static `230V` for voltage) for specific registers.
-- 🧮 **Automatic Data Handling:** Automatically manages data types (`INT16`, `UINT16`, `INT32`), correct 32-bit value splitting (High/Low words), and applies the required Huawei scaling factors (gains).
+The default discovery port remains `6600`. The port can also be set to `10086`,
+as proposed for SCharger firmware `V100R023C10SPC231` in [PR #2](../../pull/2).
+**SPC231 compatibility is experimental and has not been verified end to end by
+this correction. No claim is made for all later firmware versions.**
+
+Receiving a UDP discovery reply does not prove successful meter authentication,
+register polling or surplus charging. The server supports **plaintext Modbus TCP
+only**. It does not implement Huawei's proprietary authentication or TLS/MBAS;
+closing an unsupported connection cannot guarantee a plaintext retry.
+
+Unverified header, detection and clock registers from PR #2 are deferred. There
+is no automatic register seeding or periodic clock task. Unknown registers return
+zero unless explicitly mapped. If a particular device needs additional registers,
+map them only after verifying its actual requests and expected values.
+
+See the [SPC231 device validation procedure](docs/SPC231_VALIDATION.md) for the
+outstanding hardware checks and the evidence required before declaring support.
 
 ## Installation
 
-### Method 1: HACS (Recommended)
-1. Open HACS in Home Assistant.
-2. Click on the 3 dots in the top right corner and select **Custom repositories**.
-3. Add the URL of this repository and select **Integration** as the category.
-4. Click **Install** and restart Home Assistant.
+### HACS
 
-### Method 2: Manual
-1. Download the latest release `.zip` file from the [Releases page](../../releases).
-2. Extract the `huawei_virtual_meter` folder.
-3. Copy the folder into your Home Assistant's `custom_components/` directory.
-4. Restart Home Assistant.
+1. In HACS, open **Custom repositories**.
+2. Add this repository URL with category **Integration**, then install it.
+3. Restart Home Assistant.
+
+### Manual
+
+1. Download a release from the [Releases page](../../releases).
+2. Copy `custom_components/huawei_virtual_meter` into your Home Assistant
+   `custom_components` directory.
+3. Restart Home Assistant.
+
+For a test branch, use that branch's component directory instead of a release.
 
 ## Configuration
 
-1. In Home Assistant, navigate to **Settings** > **Devices & Services**.
-2. Click **+ ADD INTEGRATION** and search for **Huawei Virtual Meter Emulator**.
-3. During the initial setup:
-   - **Emulator IP Address:** Select the IP address of your Home Assistant instance that the SCharger should connect to.
-   - **Serial Number:** Provide a simulated serial number (default `HV0000000001` is fine).
-4. After adding the integration, click on **CONFIGURE** to map your registers.
+In **Settings > Devices & Services**, add **Huawei Virtual Meter Emulator**.
 
-## Mapping Registers
+- **Emulator IP Address:** The Home Assistant IPv4 address reachable by the charger.
+- **Serial Number:** 1–20 printable ASCII characters; default `HV0000000001`.
+- **UDP Discovery Port:** Default `6600`; configurable from `1` through `65535`.
+  `10086` is available for experimental SPC231 testing.
+- **Unit ID:** New setups default to `11`. Set a specific ID from `1` through `255`
+  to filter requests, or `0` to accept any incoming unit byte (legacy mode).
+  Responses always echo the received unit ID.
 
-Click **CONFIGURE** on the integration page. You will see two options:
+Under **CONFIGURE**, choose:
 
-1. **Add a new register mapping:**
-   - Choose the register you want to provide data for (e.g., `Register 37113: Active power`).
-   - On the next screen, you can select the **Home Assistant Entity** you want to map to this register.
-   - *Alternatively*, you can provide a **Fixed Value** (e.g., `1` for the "Meter Type" register).
-   - The scaling factor (e.g., `10` or `100`) is automatically pre-filled according to the official Huawei Modbus specifications, but you can adjust it if your sensor requires it.
-2. **Edit configured registers:**
-   - Displays a complete table of all your currently mapped registers.
-   - You can quickly adjust entities, fixed values, and factors all in one place.
-   - To **delete** a register, simply clear both the Entity ID and the Fixed Value fields and click Submit.
+1. **Add a new register mapping:** Select a register or enter an address from
+   `0` through `65535`. Choose an entity or a fixed value, then a factor.
+2. **Edit configured registers:** Change mappings and factors. Clear both entity
+   and fixed-value fields to delete a mapping; its old value is removed immediately.
+3. **Edit settings:** Change discovery port and unit ID while retaining register
+   mappings. A port change automatically reloads the integration and disconnects
+   existing Modbus clients. A unit-ID change applies on the next request, including
+   on an existing connection, without reloading.
 
-### Common Huawei Registers
-To get started, you will typically want to map at least the following:
-- **37113 (Active power):** Your total home grid consumption/export. (Positive = consuming from grid, Negative = exporting to grid).
-- **37125 (Meter type):** Usually set as a **Fixed Value**: `0` for Single-Phase, `1` for Three-Phase.
-- **37101, 37103, 37105 (Phase Voltages):** Can be mapped to voltage sensors or set to a fixed value like `230`.
+Entries created before configurable unit IDs keep legacy mode (`0`) when opening
+and saving settings. They are not silently changed to ID `11`.
+
+## Register values and factors
+
+The emulator writes `source value × factor`, truncates to an integer, and clamps
+known signed/unsigned types to their supported range. INT32 values use two words,
+high word first. **The factor is applied once**: a 230 V source with factor `10`
+produces raw `2300`. Use the source sensor's actual unit when selecting a factor.
+
+The table documents the existing emulator defaults. The current, reactive-power
+and energy factors have been aligned with the corresponding register definitions
+in [huawei-solar-lib](https://github.com/wlcrs/huawei-solar-lib/blob/develop/src/huawei_solar/registers.py).
+That implementation is a cross-check, not proof of SCharger firmware compatibility.
+
+| Register | Name | Type | Width | Gain | Expected input unit / meaning |
+|----------|------|------|-------|------|-------------------------------|
+| 37100 | Meter status | UINT16 | 1 | 1 | 0 = offline, 1 = online |
+| 37101 | A phase voltage | INT32 | 2 | 10 | V |
+| 37103 | B phase voltage | INT32 | 2 | 10 | V |
+| 37105 | C phase voltage | INT32 | 2 | 10 | V |
+| 37107 | A phase current | INT32 | 2 | 100 | A |
+| 37109 | B phase current | INT32 | 2 | 100 | A |
+| 37111 | C phase current | INT32 | 2 | 100 | A |
+| 37113 | Active power | INT32 | 2 | 1 | W; verify direction on the charger |
+| 37115 | Reactive power | INT32 | 2 | 1 | var |
+| 37117 | Power factor | INT16 | 1 | 1000 | cos phi, e.g. 0.95 |
+| 37118 | Grid frequency | INT16 | 1 | 100 | Hz |
+| 37119 | Positive active energy | INT32 | 2 | 100 | kWh; verify direction on device |
+| 37121 | Reverse active energy | INT32 | 2 | 100 | kWh; verify direction on device |
+| 37123 | Accumulated reactive energy | INT32 | 2 | 100 | kvarh |
+| 37125 | Meter type | UINT16 | 1 | 1 | 0 = single-phase, 1 = three-phase |
+| 37126 | A-B line voltage | INT32 | 2 | 10 | V |
+| 37128 | B-C line voltage | INT32 | 2 | 10 | V |
+| 37130 | C-A line voltage | INT32 | 2 | 10 | V |
+| 37132 | A phase active power | INT32 | 2 | 1 | W |
+| 37134 | B phase active power | INT32 | 2 | 1 | W |
+| 37136 | C phase active power | INT32 | 2 | 1 | W |
+| 37138 | Meter model detection result | UINT16 | 1 | 1 | Device-specific result |
+
+For a source already measured in Wh, a factor of `0.1` produces the same raw energy
+value as the default `100` applied to kWh. For example, `1.5 kWh × 100 = 150` and
+`1500 Wh × 0.1 = 150`. A 15.5 A source uses `100`, producing raw `1550`.
+
+For register `37113`, compare a known import condition and a known export condition
+with the charger's display before enabling automatic control. The emulator does
+not invert the sign automatically. If the sensor and charger use opposite sign
+conventions, use a negative factor. Do not infer the sign from discovery success.
 
 ## Troubleshooting
 
-- **Address already in use:** The integration runs a Modbus TCP server on port `502` and a UDP listener on port `6600`. Ensure no other add-ons or integrations on your Home Assistant OS are occupying these ports.
-- **SCharger doesn't connect:** Ensure that your SCharger is on the same local network subnet as your Home Assistant instance, as UDP broadcasts are used for discovery.
+- **Port already in use:** TCP `502` and the selected UDP port must be available.
+  Failed setup closes already-open sockets and state listeners before HA retries.
+- **No discovery:** Check the advertised IPv4 address, local subnet, VLAN/firewall
+  rules and the actual UDP destination port sent by the charger.
+- **Discovery works, but no readings:** Check the unit ID and register requests.
+  TLS or proprietary authentication remains unsupported; changing the discovery
+  port alone may not solve this.
+- **Unexpected values:** Check source units, factor, sign and the configured meter
+  type. Unmapped registers return zero. No fixed header overwrites custom mappings.
+
+To inspect protocol failures, enable debug logging for
+`custom_components.huawei_virtual_meter`. Malformed MBAP headers are rejected;
+unsupported function codes and invalid read requests receive Modbus exceptions.
+
+## Development and automated tests
+
+The suite uses real loopback TCP/UDP sockets and actual Home Assistant config
+entries/options flows. It covers stream fragmentation/coalescing, transaction IDs,
+request validation, live unit-ID changes, port reloads, mapping preservation,
+shutdown and cleanup after repeated bind failures. No wallbox is simulated as a
+successful firmware compatibility test.
+
+```sh
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-test.txt
+python -m pytest -q
+```
+
+Use Python 3.14 for `requirements-test.txt` (HA 2026.10.4), or Python 3.13 for
+`requirements-test-min.txt` (HA 2024.12.5) and `requirements-test-2025.txt`
+(HA 2025.4.4). The CI runs all three environments.
 
 ## Disclaimer
 
-This project is not affiliated with, endorsed by, or connected to Huawei in any way. Use at your own risk. Incorrect power values fed to the SCharger could lead to unintended charging behavior.
+This project is not affiliated with Huawei. Incorrect meter values can cause
+unintended charging behaviour. Validate actual readings and charging behaviour
+on the target device before relying on automatic control.
